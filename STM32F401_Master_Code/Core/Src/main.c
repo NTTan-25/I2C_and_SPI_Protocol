@@ -26,6 +26,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdbool.h>
+#include <string.h>
 
 #include "ssd1306.h"
 #include "ssd1306_tests.h"
@@ -50,7 +52,13 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+bool proto = false;
+bool mode = true;
 
+uint8_t data_tx = 0xAB;
+uint8_t data_rx = 0;
+
+char buf[50];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,7 +69,18 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if(GPIO_Pin == GPIO_PIN_13)
+    {
+    	proto = !proto;
+    }
 
+    if(GPIO_Pin == GPIO_PIN_0)
+    {
+    	mode = !mode;
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -71,79 +90,109 @@ void SystemClock_Config(void);
 int main(void)
 {
 
-	/* USER CODE BEGIN 1 */
+  /* USER CODE BEGIN 1 */
 
-	/* USER CODE END 1 */
+  /* USER CODE END 1 */
 
-	/* MCU Configuration--------------------------------------------------------*/
+  /* MCU Configuration--------------------------------------------------------*/
 
-	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-	HAL_Init();
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-	/* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-	/* USER CODE END Init */
+  /* USER CODE END Init */
 
-	/* Configure the system clock */
-	SystemClock_Config();
+  /* Configure the system clock */
+  SystemClock_Config();
 
-	/* USER CODE BEGIN SysInit */
+  /* USER CODE BEGIN SysInit */
 
-	/* USER CODE END SysInit */
+  /* USER CODE END SysInit */
 
-	/* Initialize all configured peripherals */
-	MX_GPIO_Init();
-	MX_I2C2_Init();
-	MX_SPI1_Init();
-	MX_USART2_UART_Init();
-	MX_I2C1_Init();
-	HAL_Delay(100);
-	/* USER CODE BEGIN 2 */
-	ssd1306_Init();
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_I2C2_Init();
+  MX_SPI1_Init();
+  MX_USART2_UART_Init();
+  /* USER CODE BEGIN 2 */
+  ssd1306_Init();
 
-	char buf[50];
-	uint8_t data = 0xAB;
+  HAL_Delay(500);
+  /* USER CODE END 2 */
 
-	ssd1306_Fill(Black);
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+	  if (proto)
+	  {
+			ssd1306_Fill(Black);
 
-	ssd1306_SetCursor(0, 0);
-	snprintf(buf, sizeof(buf), "I2C Protocol");
-	ssd1306_WriteString(buf, Font_7x10, White);
+			ssd1306_SetCursor(0, 0);
+			snprintf(buf, sizeof(buf), "I2C Master");
+			ssd1306_WriteString(buf, Font_7x10, White);
 
-	ssd1306_SetCursor(0, 12);
-	snprintf(buf, sizeof(buf), "Master TX: 0xAB");
-	ssd1306_WriteString(buf, Font_7x10, White);
+			if (mode)
+			{
+				ssd1306_SetCursor(0, 11);
+				snprintf(buf, sizeof(buf), "Transmit");
+				ssd1306_WriteString(buf, Font_7x10, White);
 
-	ssd1306_UpdateScreen();
+				HAL_I2C_Master_Transmit(&hi2c2, SLAVE_ADDR, &data_tx, 1, 200);
+			}
+			else
+			{
+		        ssd1306_SetCursor(0, 11);
+		        snprintf(buf, sizeof(buf), "Receive");
+		        ssd1306_WriteString(buf, Font_7x10, White);
 
-	HAL_I2C_Master_Transmit(&hi2c2, SLAVE_ADDR, &data, 1, HAL_MAX_DELAY);
+		        HAL_StatusTypeDef ret = HAL_I2C_Master_Receive(&hi2c2, SLAVE_ADDR, &data_rx, 1, 200);
 
-	HAL_Delay(500);
+				ssd1306_SetCursor(0, 22);
+				if (ret == HAL_OK)
+				{
+				    snprintf(buf, sizeof(buf), "Data: 0x%02X", data_rx);
+				}
+				else
+				{
+				    snprintf(buf, sizeof(buf), "Data: None");
+				}
+				ssd1306_WriteString(buf, Font_7x10, White);
 
-	/* USER CODE END 2 */
+		        HAL_Delay(500);
+			}
+			ssd1306_UpdateScreen();
+	  }
+	  else
+	  {
+		  ssd1306_Fill(Black);
 
-	/* Infinite loop */
-	/* USER CODE BEGIN WHILE */
-	while (1)
-	{
-		ssd1306_Fill(Black);
+		  ssd1306_SetCursor(0, 0);
+		  snprintf(buf, sizeof(buf), "SPI Master");
+		  ssd1306_WriteString(buf, Font_7x10, White);
 
-		ssd1306_SetCursor(0, 0);
-		snprintf(buf, sizeof(buf), "I2C Protocol");
-		ssd1306_WriteString(buf, Font_7x10, White);
+		  // Xóa if/else mode, thay bằng:
+		  ssd1306_SetCursor(0, 11);
+		  snprintf(buf, sizeof(buf), "TX:0x%02X", data_tx);
+		  ssd1306_WriteString(buf, Font_7x10, White);
 
-		ssd1306_SetCursor(0, 12);
-		snprintf(buf, sizeof(buf), "Master TX: 0xAB");
-		ssd1306_WriteString(buf, Font_7x10, White);
+		  HAL_GPIO_WritePin(SPI1_NSS_GPIO_Port, SPI1_NSS_Pin, GPIO_PIN_RESET);
+		  HAL_SPI_TransmitReceive(&hspi1, &data_tx, &data_rx, 1, 1000);
+		  HAL_GPIO_WritePin(SPI1_NSS_GPIO_Port, SPI1_NSS_Pin, GPIO_PIN_SET);
 
-		ssd1306_UpdateScreen();
+		  ssd1306_SetCursor(0, 22);
+		  snprintf(buf, sizeof(buf), "RX:0x%02X", data_rx);
+		  ssd1306_WriteString(buf, Font_7x10, White);
 
-		HAL_I2C_Master_Transmit(&hi2c2, SLAVE_ADDR, &data, 1, HAL_MAX_DELAY);
-
-		HAL_Delay(500);
+		  ssd1306_UpdateScreen();
+		  HAL_Delay(500);
+	  }
     /* USER CODE BEGIN 3 */
-	}
-	/* USER CODE END 3 */
+  }
+  /* USER CODE END 3 */
 }
 
 /**

@@ -25,6 +25,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdbool.h>
+#include <string.h>
 
 #include "ssd1306.h"
 #include "ssd1306_tests.h"
@@ -38,7 +40,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define MASTER_ADDR (0x52 << 1)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -49,8 +51,12 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint8_t rx_data = 0;
-uint8_t rx_flag = 0;
+bool proto = false;
+bool mode = true;
+
+uint8_t data_tx = 0xCD;
+uint8_t data_rx = 0;
+
 char buf[50];
 /* USER CODE END PV */
 
@@ -62,7 +68,18 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if(GPIO_Pin == GPIO_PIN_0)
+    {
+    	proto = !proto;
+    }
 
+    if(GPIO_Pin == GPIO_PIN_1)
+    {
+    	mode = !mode;
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -99,53 +116,78 @@ int main(void)
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   ssd1306_Init();
-  ssd1306_Fill(Black);
 
-  ssd1306_SetCursor(0, 0);
-  ssd1306_WriteString("Slave Ready", Font_7x10, White);
-  ssd1306_UpdateScreen();
-
-  // Bắt đầu lắng nghe master
-  HAL_I2C_Slave_Receive_IT(&hi2c2, &rx_data, 1);
+  HAL_Delay(500);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1)
-	{
+  while (1)
+  {
     /* USER CODE END WHILE */
-	    if (rx_flag == 1)
-	    {
-	        rx_flag = 0;
+	  if (proto)
+	  {
+			ssd1306_Fill(Black);
 
-	        // Hiển thị lên màn hình
-	        ssd1306_Fill(Black);
+			ssd1306_SetCursor(0, 0);
+			snprintf(buf, sizeof(buf), "I2C Slave");
+			ssd1306_WriteString(buf, Font_7x10, White);
 
-	        ssd1306_SetCursor(0, 0);
-	        ssd1306_WriteString("I2C Slave", Font_7x10, White);
+			if (mode)
+			{
+				ssd1306_SetCursor(0, 11);
+				snprintf(buf, sizeof(buf), "Receive");
+				ssd1306_WriteString(buf, Font_7x10, White);
 
-	        ssd1306_SetCursor(0, 24);
-	        snprintf(buf, sizeof(buf), "RX: 0x%02X", rx_data);
-	        ssd1306_WriteString(buf, Font_7x10, White);
+				HAL_StatusTypeDef ret = HAL_I2C_Slave_Receive(&hi2c2, &data_rx, 1, 200);
 
-	        ssd1306_UpdateScreen();
+				ssd1306_SetCursor(0, 22);
+				if (ret == HAL_OK)
+				{
+				    snprintf(buf, sizeof(buf), "Data: 0x%02X", data_rx);
+				}
+				else
+				{
+				    snprintf(buf, sizeof(buf), "Data: None");
+				}
+				ssd1306_WriteString(buf, Font_7x10, White);
+			}
+			else
+			{
+		        ssd1306_SetCursor(0, 11);
+		        snprintf(buf, sizeof(buf), "Transmit");
+		        ssd1306_WriteString(buf, Font_7x10, White);
 
-	        // Lắng nghe tiếp
-	        HAL_I2C_Slave_Receive_IT(&hi2c2, &rx_data, 1);
-	    }
+		        HAL_I2C_Slave_Transmit(&hi2c2, &data_tx, 1, 200);
+			}
+			ssd1306_UpdateScreen();
+	  }
+	  else
+	  {
+		  ssd1306_Fill(Black);
 
-	    if (HAL_I2C_GetError(&hi2c2) != HAL_I2C_ERROR_NONE ||
-	        HAL_I2C_GetState(&hi2c2) == HAL_I2C_STATE_READY)
-	    {
-	        HAL_I2C_DeInit(&hi2c2);
-	        __HAL_RCC_I2C2_FORCE_RESET();
-	        HAL_Delay(5);
-	        __HAL_RCC_I2C2_RELEASE_RESET();
-	        MX_I2C2_Init();
-	        HAL_I2C_Slave_Receive_IT(&hi2c2, &rx_data, 1);
-	    }
+		  ssd1306_SetCursor(0, 0);
+		  snprintf(buf, sizeof(buf), "SPI Slave");
+		  ssd1306_WriteString(buf, Font_7x10, White);
+
+		  ssd1306_SetCursor(0, 11);
+		  snprintf(buf, sizeof(buf), "TX:0x%02X", data_tx);
+		  ssd1306_WriteString(buf, Font_7x10, White);
+
+		  HAL_StatusTypeDef ret = HAL_SPI_TransmitReceive(&hspi1, &data_tx, &data_rx, 1, 1000);
+
+		  ssd1306_SetCursor(0, 22);
+		  if (ret == HAL_OK)
+		      snprintf(buf, sizeof(buf), "RX:0x%02X", data_rx);
+		  else
+		      snprintf(buf, sizeof(buf), "Waiting...");
+		  ssd1306_WriteString(buf, Font_7x10, White);;
+		  ssd1306_UpdateScreen();
+
+		  HAL_Delay(500);
+	  }
     /* USER CODE BEGIN 3 */
-	}
+  }
   /* USER CODE END 3 */
 }
 
@@ -186,26 +228,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
-{
-    if (hi2c->Instance == I2C2)
-    {
-        rx_flag = 1;
-    }
-}
 
-void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
-{
-    if (hi2c->Instance == I2C2)
-    {
-        HAL_I2C_DeInit(&hi2c2);
-        __HAL_RCC_I2C2_FORCE_RESET();
-        HAL_Delay(5);
-        __HAL_RCC_I2C2_RELEASE_RESET();
-        MX_I2C2_Init();
-        HAL_I2C_Slave_Receive_IT(&hi2c2, &rx_data, 1);
-    }
-}
 /* USER CODE END 4 */
 
 /**
